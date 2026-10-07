@@ -2,7 +2,62 @@ import uuid
 import json
 from typing import List, Dict, Any, Optional
 from app.db.database import get_connection
+from app.core.security import hash_password
 from app.schemas.transcript import AIProject
+
+def create_team_user(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Add a new developer agent or project manager to the team."""
+    name = data.get("name", "").strip()
+    email = data.get("email", "").strip().lower()
+    role = data.get("role", "AGENT").strip().upper()
+    specialization = data.get("specialization", "").strip()
+    skills = data.get("skills", [])
+    password = data.get("password") or "Demo123!"
+
+    if not name:
+        raise ValueError("Name cannot be empty.")
+    if not email:
+        raise ValueError("Email cannot be empty.")
+    if role not in ("AGENT", "MANAGER"):
+        raise ValueError("Role must be 'AGENT' or 'MANAGER'.")
+
+    conn = get_connection()
+    try:
+        # Check duplicate email
+        existing = conn.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone()
+        if existing:
+            raise ValueError(f"User with email '{email}' already exists.")
+
+        # Determine next ID
+        prefix = "DEV" if role == "AGENT" else "PM"
+        rows = conn.execute("SELECT id FROM users WHERE id LIKE ?", (f"{prefix}%",)).fetchall()
+        max_num = 0
+        for r in rows:
+            uid = r["id"]
+            num_part = uid[len(prefix):]
+            if num_part.isdigit():
+                max_num = max(max_num, int(num_part))
+        next_id = f"{prefix}{max_num + 1:02d}"
+
+        pwd_hash = hash_password(password)
+        skills_json = json.dumps(skills)
+
+        conn.execute("""
+            INSERT INTO users (id, name, email, password_hash, role, specialization, skills)
+            VALUES (?, ?, ?, ?, ?, ?, ?);
+        """, (next_id, name, email, pwd_hash, role, specialization, skills_json))
+        conn.commit()
+
+        return {
+            "id": next_id,
+            "name": name,
+            "email": email,
+            "role": role,
+            "specialization": specialization,
+            "skills": skills
+        }
+    finally:
+        conn.close()
 
 def get_team_directory() -> List[Dict[str, Any]]:
     """Retrieve safe read-only team directory."""
@@ -128,6 +183,8 @@ def get_project_detail(project_id: str, user: Dict[str, Any]) -> Optional[Dict[s
         if role == "AGENT":
             task_rows = conn.execute("""
                 SELECT t.id, t.title, t.description, t.deadline, t.estimated_hours AS estimatedHours,
+                       COALESCE(t.remaining_hours, t.estimated_hours) AS remainingHours,
+                       COALESCE(t.status, 'TODO') AS status,
                        u.id AS assignee_id, u.name AS assignee_name
                 FROM tasks t
                 JOIN users u ON t.assignee_id = u.id
@@ -137,6 +194,8 @@ def get_project_detail(project_id: str, user: Dict[str, Any]) -> Optional[Dict[s
         else:
             task_rows = conn.execute("""
                 SELECT t.id, t.title, t.description, t.deadline, t.estimated_hours AS estimatedHours,
+                       COALESCE(t.remaining_hours, t.estimated_hours) AS remainingHours,
+                       COALESCE(t.status, 'TODO') AS status,
                        u.id AS assignee_id, u.name AS assignee_name
                 FROM tasks t
                 JOIN users u ON t.assignee_id = u.id
@@ -154,7 +213,9 @@ def get_project_detail(project_id: str, user: Dict[str, Any]) -> Optional[Dict[s
                     "name": t["assignee_name"]
                 },
                 "deadline": t["deadline"],
-                "estimatedHours": float(t["estimatedHours"])
+                "estimatedHours": float(t["estimatedHours"]),
+                "remainingHours": float(t["remainingHours"]),
+                "status": t.get("status", "TODO")
             }
             for t in task_rows
         ]
@@ -184,6 +245,8 @@ def get_tasks_for_user(user: Dict[str, Any]) -> List[Dict[str, Any]]:
             rows = conn.execute("""
                 SELECT t.id, t.project_id AS projectId, p.name AS projectName,
                        t.title, t.description, t.deadline, t.estimated_hours AS estimatedHours,
+                       COALESCE(t.remaining_hours, t.estimated_hours) AS remainingHours,
+                       COALESCE(t.status, 'TODO') AS status,
                        u.id AS assignee_id, u.name AS assignee_name
                 FROM tasks t
                 JOIN projects p ON t.project_id = p.id
@@ -194,6 +257,8 @@ def get_tasks_for_user(user: Dict[str, Any]) -> List[Dict[str, Any]]:
             rows = conn.execute("""
                 SELECT t.id, t.project_id AS projectId, p.name AS projectName,
                        t.title, t.description, t.deadline, t.estimated_hours AS estimatedHours,
+                       COALESCE(t.remaining_hours, t.estimated_hours) AS remainingHours,
+                       COALESCE(t.status, 'TODO') AS status,
                        u.id AS assignee_id, u.name AS assignee_name
                 FROM tasks t
                 JOIN projects p ON t.project_id = p.id
@@ -205,6 +270,8 @@ def get_tasks_for_user(user: Dict[str, Any]) -> List[Dict[str, Any]]:
             rows = conn.execute("""
                 SELECT t.id, t.project_id AS projectId, p.name AS projectName,
                        t.title, t.description, t.deadline, t.estimated_hours AS estimatedHours,
+                       COALESCE(t.remaining_hours, t.estimated_hours) AS remainingHours,
+                       COALESCE(t.status, 'TODO') AS status,
                        u.id AS assignee_id, u.name AS assignee_name
                 FROM tasks t
                 JOIN projects p ON t.project_id = p.id
@@ -227,10 +294,108 @@ def get_tasks_for_user(user: Dict[str, Any]) -> List[Dict[str, Any]]:
                     "name": r["assignee_name"]
                 },
                 "deadline": r["deadline"],
-                "estimatedHours": float(r["estimatedHours"])
+                "estimatedHours": float(r["estimatedHours"]),
+                "remainingHours": float(r["remainingHours"]),
+                "status": r.get("status", "TODO")
             }
             for r in rows
         ]
+    finally:
+        conn.close()
+
+def update_task(task_id: str, update_data: Dict[str, Any], current_user: Dict[str, Any]) -> Dict[str, Any]:
+    """Update task assignee, status, remaining hours, or details with role validation."""
+    role = current_user["role"]
+    user_id = current_user["id"]
+    conn = get_connection()
+    try:
+        task = conn.execute("""
+            SELECT t.id, t.project_id, t.assignee_id, COALESCE(t.status, 'TODO') AS status,
+                   t.estimated_hours, COALESCE(t.remaining_hours, t.estimated_hours) AS remaining_hours,
+                   p.manager_id
+            FROM tasks t
+            JOIN projects p ON t.project_id = p.id
+            WHERE t.id = ?
+        """, (task_id,)).fetchone()
+
+        if not task:
+            raise ValueError("Task not found.")
+
+        # Reassign logic
+        if "assigneeId" in update_data and update_data["assigneeId"]:
+            if role not in ("ADMIN", "MANAGER"):
+                raise PermissionError("Only Administrators and Project Managers can reassign tasks.")
+            if role == "MANAGER" and task["manager_id"] != user_id:
+                raise PermissionError("You can only reassign tasks in projects you manage.")
+            
+            new_assignee_id = update_data["assigneeId"].strip()
+            assignee = conn.execute("SELECT id, name, role FROM users WHERE id = ?", (new_assignee_id,)).fetchone()
+            if not assignee:
+                raise ValueError(f"Assignee '{new_assignee_id}' does not exist.")
+            if assignee["role"] != "AGENT":
+                raise ValueError(f"User '{assignee['name']}' ({assignee['id']}) is a {assignee['role']}, not an AGENT.")
+            
+            conn.execute("UPDATE tasks SET assignee_id = ? WHERE id = ?", (new_assignee_id, task_id))
+
+        # Status update logic
+        if "status" in update_data and update_data["status"]:
+            new_status = update_data["status"].strip().upper()
+            if new_status not in ("TODO", "IN_PROGRESS", "COMPLETED"):
+                raise ValueError("Status must be one of: 'TODO', 'IN_PROGRESS', 'COMPLETED'.")
+            
+            if role == "AGENT" and task["assignee_id"] != user_id:
+                raise PermissionError("You can only update status for your own assigned tasks.")
+            if role == "MANAGER" and task["manager_id"] != user_id:
+                raise PermissionError("You can only update tasks in projects you manage.")
+            
+            conn.execute("UPDATE tasks SET status = ? WHERE id = ?", (new_status, task_id))
+            if new_status == "COMPLETED" and "remainingHours" not in update_data:
+                conn.execute("UPDATE tasks SET remaining_hours = 0 WHERE id = ?", (task_id,))
+
+        # Remaining hours update logic
+        if "remainingHours" in update_data and update_data["remainingHours"] is not None:
+            new_rem_hours = float(update_data["remainingHours"])
+            if new_rem_hours < 0:
+                raise ValueError("Remaining hours cannot be negative.")
+            
+            if role == "AGENT" and task["assignee_id"] != user_id:
+                raise PermissionError("You can only update remaining hours for your own assigned tasks.")
+            if role == "MANAGER" and task["manager_id"] != user_id:
+                raise PermissionError("You can only update tasks in projects you manage.")
+            
+            conn.execute("UPDATE tasks SET remaining_hours = ? WHERE id = ?", (new_rem_hours, task_id))
+            if new_rem_hours == 0 and "status" not in update_data:
+                conn.execute("UPDATE tasks SET status = 'COMPLETED' WHERE id = ?", (task_id,))
+
+        conn.commit()
+
+        updated_row = conn.execute("""
+            SELECT t.id, t.project_id AS projectId, p.name AS projectName,
+                   t.title, t.description, t.deadline, t.estimated_hours AS estimatedHours,
+                   COALESCE(t.remaining_hours, t.estimated_hours) AS remainingHours,
+                   COALESCE(t.status, 'TODO') AS status,
+                   u.id AS assignee_id, u.name AS assignee_name
+            FROM tasks t
+            JOIN projects p ON t.project_id = p.id
+            JOIN users u ON t.assignee_id = u.id
+            WHERE t.id = ?
+        """, (task_id,)).fetchone()
+
+        return {
+            "id": updated_row["id"],
+            "projectId": updated_row["projectId"],
+            "projectName": updated_row["projectName"],
+            "title": updated_row["title"],
+            "description": updated_row["description"] or "",
+            "assignee": {
+                "id": updated_row["assignee_id"],
+                "name": updated_row["assignee_name"]
+            },
+            "deadline": updated_row["deadline"],
+            "estimatedHours": float(updated_row["estimatedHours"]),
+            "remainingHours": float(updated_row["remainingHours"]),
+            "status": updated_row["status"]
+        }
     finally:
         conn.close()
 
@@ -288,8 +453,8 @@ def save_transcript_batch(ai_projects: List[AIProject]) -> Dict[str, Any]:
                 for t in p.tasks:
                     task_id = f"task_{uuid.uuid4().hex[:8]}"
                     conn.execute("""
-                        INSERT INTO tasks (id, project_id, title, description, assignee_id, deadline, estimated_hours)
-                        VALUES (?, ?, ?, ?, ?, ?, ?);
+                        INSERT INTO tasks (id, project_id, title, description, assignee_id, deadline, estimated_hours, remaining_hours)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?);
                     """, (
                         task_id,
                         proj_id,
@@ -297,6 +462,7 @@ def save_transcript_batch(ai_projects: List[AIProject]) -> Dict[str, Any]:
                         t.description.strip() if t.description else "",
                         t.assigneeId,
                         t.deadline.strip(),
+                        float(t.estimatedHours),
                         float(t.estimatedHours)
                     ))
                     total_tasks_created += 1

@@ -97,13 +97,13 @@ class TestNovaWorksAPI(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         init_db()
-        seed_users()
-        # Clean any old test projects
         conn = get_connection()
         conn.execute("DELETE FROM tasks;")
         conn.execute("DELETE FROM projects;")
+        conn.execute("DELETE FROM users WHERE id NOT IN ('ADM01','MGR01','MGR02','MGR03','DEV01','DEV02','DEV03','DEV04','DEV05','DEV06');")
         conn.commit()
         conn.close()
+        seed_users()
         cls.client = TestClient(app)
 
     def test_01_health_check(self):
@@ -248,6 +248,123 @@ class TestNovaWorksAPI(unittest.TestCase):
         integration_task = [t for t in tasks if t["title"] == "Mobile integration and testing"][0]
         self.assertEqual(integration_task["estimatedHours"], 12)
         self.assertEqual(integration_task["deadline"], "2026-10-23")
+
+    def test_08_reassign_and_task_status(self):
+        admin_token = self.client.post("/api/auth/login", json={"email": "admin@novaworks.example", "password": "Demo123!"}).json()["access_token"]
+        tasks = self.client.get("/api/tasks", headers={"Authorization": f"Bearer {admin_token}"}).json()["tasks"]
+        target_task = tasks[0]
+
+        # 1. Admin reassigns task to DEV03 (Sara Noor)
+        patch_resp = self.client.patch(
+            f"/api/tasks/{target_task['id']}",
+            headers={"Authorization": f"Bearer {admin_token}"},
+            json={"assigneeId": "DEV03"}
+        )
+        self.assertEqual(patch_resp.status_code, 200)
+        self.assertEqual(patch_resp.json()["assignee"]["id"], "DEV03")
+
+        # 2. Sara (DEV03) updates status to IN_PROGRESS
+        sara_token = self.client.post("/api/auth/login", json={"email": "sara@novaworks.example", "password": "Demo123!"}).json()["access_token"]
+        status_resp = self.client.patch(
+            f"/api/tasks/{target_task['id']}",
+            headers={"Authorization": f"Bearer {sara_token}"},
+            json={"status": "IN_PROGRESS"}
+        )
+        self.assertEqual(status_resp.status_code, 200)
+        self.assertEqual(status_resp.json()["status"], "IN_PROGRESS")
+
+        # 3. Unauthorized agent attempting to reassign should get 403
+        unauth_patch = self.client.patch(
+            f"/api/tasks/{target_task['id']}",
+            headers={"Authorization": f"Bearer {sara_token}"},
+            json={"assigneeId": "DEV01"}
+        )
+        self.assertEqual(unauth_patch.status_code, 403)
+
+    def test_09_create_new_developer_agent(self):
+        admin_token = self.client.post("/api/auth/login", json={"email": "admin@novaworks.example", "password": "Demo123!"}).json()["access_token"]
+        
+        # 1. Non-admin cannot create users
+        ali_token = self.client.post("/api/auth/login", json={"email": "ali@novaworks.example", "password": "Demo123!"}).json()["access_token"]
+        unauth_create = self.client.post(
+            "/api/users",
+            headers={"Authorization": f"Bearer {ali_token}"},
+            json={"name": "Hassan Raza", "email": "hassan@novaworks.example", "role": "AGENT"}
+        )
+        self.assertEqual(unauth_create.status_code, 403)
+
+        # 2. Admin creates a new AGENT developer
+        create_resp = self.client.post(
+            "/api/users",
+            headers={"Authorization": f"Bearer {admin_token}"},
+            json={
+                "name": "Farhan Ali",
+                "email": "farhan@novaworks.example",
+                "role": "AGENT",
+                "specialization": "Backend / Python",
+                "skills": ["Python", "FastAPI", "Docker"]
+            }
+        )
+        self.assertEqual(create_resp.status_code, 200)
+        data = create_resp.json()
+        self.assertEqual(data["name"], "Farhan Ali")
+        self.assertEqual(data["role"], "AGENT")
+        self.assertEqual(data["id"], "DEV07")
+
+        # 3. Newly created agent can log in
+        login_resp = self.client.post("/api/auth/login", json={"email": "farhan@novaworks.example", "password": "Demo123!"})
+        self.assertEqual(login_resp.status_code, 200)
+
+        # 4. Appears in team directory
+        team_resp = self.client.get("/api/users/team", headers={"Authorization": f"Bearer {admin_token}"})
+        self.assertEqual(team_resp.status_code, 200)
+        user_ids = [u["id"] for u in team_resp.json()["users"]]
+        self.assertIn("DEV07", user_ids)
+
+    def test_10_update_remaining_hours(self):
+        admin_token = self.client.post("/api/auth/login", json={"email": "admin@novaworks.example", "password": "Demo123!"}).json()["access_token"]
+        ali_token = self.client.post("/api/auth/login", json={"email": "ali@novaworks.example", "password": "Demo123!"}).json()["access_token"]
+        sara_token = self.client.post("/api/auth/login", json={"email": "sara@novaworks.example", "password": "Demo123!"}).json()["access_token"]
+
+        # Ali gets his tasks
+        ali_tasks = self.client.get("/api/tasks/my", headers={"Authorization": f"Bearer {ali_token}"}).json()["tasks"]
+        self.assertGreater(len(ali_tasks), 0)
+        target_task = ali_tasks[0]
+
+        # 1. Ali updates his remaining hours to 7.5
+        update_resp = self.client.patch(
+            f"/api/tasks/{target_task['id']}",
+            headers={"Authorization": f"Bearer {ali_token}"},
+            json={"remainingHours": 7.5}
+        )
+        self.assertEqual(update_resp.status_code, 200)
+        self.assertEqual(update_resp.json()["remainingHours"], 7.5)
+
+        # 2. Sara (another agent) tries to update Ali's task -> 403 Forbidden
+        unauth_resp = self.client.patch(
+            f"/api/tasks/{target_task['id']}",
+            headers={"Authorization": f"Bearer {sara_token}"},
+            json={"remainingHours": 5.0}
+        )
+        self.assertEqual(unauth_resp.status_code, 403)
+
+        # 3. Negative remaining hours rejected -> 400 Bad Request
+        neg_resp = self.client.patch(
+            f"/api/tasks/{target_task['id']}",
+            headers={"Authorization": f"Bearer {ali_token}"},
+            json={"remainingHours": -2.0}
+        )
+        self.assertEqual(neg_resp.status_code, 400)
+
+        # 4. Setting remaining hours to 0 auto-completes the task
+        complete_resp = self.client.patch(
+            f"/api/tasks/{target_task['id']}",
+            headers={"Authorization": f"Bearer {ali_token}"},
+            json={"remainingHours": 0.0}
+        )
+        self.assertEqual(complete_resp.status_code, 200)
+        self.assertEqual(complete_resp.json()["remainingHours"], 0.0)
+        self.assertEqual(complete_resp.json()["status"], "COMPLETED")
 
 if __name__ == "__main__":
     unittest.main()

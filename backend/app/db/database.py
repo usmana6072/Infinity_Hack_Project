@@ -72,11 +72,22 @@ def init_db():
                 assignee_id TEXT NOT NULL,
                 deadline TEXT NOT NULL,
                 estimated_hours REAL NOT NULL CHECK(estimated_hours > 0),
+                remaining_hours REAL,
+                status TEXT NOT NULL DEFAULT 'TODO' CHECK(status IN ('TODO', 'IN_PROGRESS', 'COMPLETED')),
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
                 FOREIGN KEY (assignee_id) REFERENCES users(id) ON DELETE RESTRICT
             );
             """)
+
+            # Check if status and remaining_hours columns exist in tasks, add if missing
+            cursor = conn.execute("PRAGMA table_info(tasks);")
+            columns = [row["name"] for row in cursor.fetchall()]
+            if "status" not in columns:
+                conn.execute("ALTER TABLE tasks ADD COLUMN status TEXT NOT NULL DEFAULT 'TODO';")
+            if "remaining_hours" not in columns:
+                conn.execute("ALTER TABLE tasks ADD COLUMN remaining_hours REAL;")
+                conn.execute("UPDATE tasks SET remaining_hours = estimated_hours WHERE remaining_hours IS NULL;")
             
             # Useful indexes
             conn.execute("CREATE INDEX IF NOT EXISTS idx_projects_manager ON projects(manager_id);")

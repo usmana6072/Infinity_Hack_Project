@@ -3,10 +3,13 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import Topbar from '../components/Topbar';
-import { FolderKanban, Sparkles, ArrowRight } from 'lucide-react';
+import TiltCard from '../components/TiltCard';
+import GlassBanner from '../components/GlassBanner';
+import { FolderKanban, Sparkles, ArrowRight, Search } from 'lucide-react';
 
 export default function ProjectsPage() {
   const [projects, setProjects] = useState([]);
+  const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const { user } = useAuth();
@@ -26,6 +29,12 @@ export default function ProjectsPage() {
     loadProjects();
   }, []);
 
+  const filteredProjects = projects.filter(p => 
+    p.name.toLowerCase().includes(search.toLowerCase()) ||
+    p.clientName.toLowerCase().includes(search.toLowerCase()) ||
+    (p.manager?.name && p.manager.name.toLowerCase().includes(search.toLowerCase()))
+  );
+
   const pageTitle = user?.role === 'ADMIN' ? 'All Client Projects' : user?.role === 'MANAGER' ? 'My Managed Projects' : 'Projects Involving My Tasks';
 
   return (
@@ -42,26 +51,51 @@ export default function ProjectsPage() {
         }
       />
 
+      <GlassBanner
+        badge="PROJECT DIRECTORY"
+        badgeColor="orange"
+        title="Active Client Engagements & Delivery Pipelines"
+        description="Filtered by authorization boundaries. Managers and assigned developers access strictly approved scopes."
+        stats={[
+          { label: 'Scope', value: `${projects.length} Projects`, color: '#ea580c' },
+          { label: 'Security Level', value: 'Role-Isolated', color: '#16a34a' }
+        ]}
+      />
+
       {error && <div className="alert error">{error}</div>}
+
+      {/* Search Input */}
+      <div style={{ marginBottom: '22px', maxWidth: '400px', position: 'relative' }}>
+        <input
+          type="text"
+          placeholder="Search by project, client, or manager..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          style={{ paddingLeft: '38px' }}
+        />
+        <Search size={16} style={{ position: 'absolute', left: '12px', top: '13px', color: '#94a3b8' }} />
+      </div>
 
       {loading ? (
         <div className="empty">Loading projects...</div>
-      ) : projects.length === 0 ? (
+      ) : filteredProjects.length === 0 ? (
         <div className="card empty">
           <FolderKanban size={40} style={{ color: '#94a3b8', marginBottom: '12px' }} />
           <h3>No projects found</h3>
           <p className="muted">
-            {user?.role === 'ADMIN' 
-              ? 'No projects exist yet. Run transcript extraction to populate projects.' 
-              : 'You do not have any projects assigned to your account.'}
+            {search 
+              ? `No projects matched "${search}".` 
+              : user?.role === 'ADMIN' 
+                ? 'No projects exist yet. Run transcript extraction to populate projects.' 
+                : 'You do not have any projects assigned to your account.'}
           </p>
         </div>
       ) : (
         <div className="grid">
-          {projects.map((proj) => (
-            <div
+          {filteredProjects.map((proj) => (
+            <TiltCard
               key={proj.id}
-              className="card project-card"
+              className="project-card"
               onClick={() => navigate(`/projects/${proj.id}`)}
             >
               <div>
@@ -92,7 +126,7 @@ export default function ProjectsPage() {
                   <ArrowRight size={14} />
                 </span>
               </div>
-            </div>
+            </TiltCard>
           ))}
         </div>
       )}

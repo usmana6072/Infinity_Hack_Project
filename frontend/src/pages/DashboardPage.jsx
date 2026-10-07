@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
 import Topbar from '../components/Topbar';
+import TiltCard from '../components/TiltCard';
+import GlassBanner from '../components/GlassBanner';
 import { FolderKanban, CheckSquare, Clock, Users, Sparkles, ArrowRight } from 'lucide-react';
 
 export default function DashboardPage() {
@@ -30,6 +32,7 @@ export default function DashboardPage() {
   }, []);
 
   const totalHours = tasks.reduce((sum, t) => sum + (t.estimatedHours || 0), 0);
+  const remainingHours = tasks.reduce((sum, t) => sum + (t.remainingHours !== undefined ? t.remainingHours : (t.estimatedHours || 0)), 0);
 
   return (
     <div>
@@ -43,25 +46,36 @@ export default function DashboardPage() {
         }
       />
 
+      <GlassBanner
+        badge="AI ORCHESTRATION"
+        badgeColor="orange"
+        title="NovaWorks Autonomous Project Delivery Matrix"
+        description="Meeting transcript intelligence, role-isolated task governance & real-time remaining effort tracking across 10 specialized agents."
+        stats={[
+          { label: 'System Mode', value: 'Live Autonomous', color: '#16a34a' },
+          { label: 'Role Security', value: 'RBAC Enforced', color: '#ea580c' },
+        ]}
+      />
+
       {error && <div className="alert error">{error}</div>}
 
       <div className="stats">
-        <div className="card stat">
+        <TiltCard className="stat" maxTilt={6}>
           <div className="label">Total Projects</div>
-          <div className="num" style={{ color: '#4f46e5' }}>{projects.length}</div>
-        </div>
-        <div className="card stat">
+          <div className="num" style={{ color: '#ea580c' }}>{projects.length}</div>
+        </TiltCard>
+        <TiltCard className="stat" maxTilt={6}>
           <div className="label">Total Tasks</div>
           <div className="num" style={{ color: '#0ea5e9' }}>{tasks.length}</div>
-        </div>
-        <div className="card stat">
+        </TiltCard>
+        <TiltCard className="stat" maxTilt={6}>
           <div className="label">Planned Dev Hours</div>
           <div className="num" style={{ color: '#10b981' }}>{totalHours}h</div>
-        </div>
-        <div className="card stat">
-          <div className="label">Team Members</div>
-          <div className="num" style={{ color: '#8b5cf6' }}>10</div>
-        </div>
+        </TiltCard>
+        <TiltCard className="stat" maxTilt={6}>
+          <div className="label">Remaining Dev Hours</div>
+          <div className="num" style={{ color: '#ea580c' }}>{remainingHours}h</div>
+        </TiltCard>
       </div>
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
@@ -86,9 +100,9 @@ export default function DashboardPage() {
       ) : (
         <div className="grid">
           {projects.map((proj) => (
-            <div
+            <TiltCard
               key={proj.id}
-              className="card project-card"
+              className="project-card"
               onClick={() => navigate(`/projects/${proj.id}`)}
             >
               <div>
@@ -112,7 +126,7 @@ export default function DashboardPage() {
                   <span className="strong">{proj.deadline}</span>
                 </div>
               </div>
-            </div>
+            </TiltCard>
           ))}
         </div>
       )}

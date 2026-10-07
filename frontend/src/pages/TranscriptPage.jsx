@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
 import Topbar from '../components/Topbar';
+import GlassBanner from '../components/GlassBanner';
 import { Sparkles, FileText, CheckCircle2, AlertTriangle, ArrowRight } from 'lucide-react';
 
 const OFFICIAL_SAMPLE_TRANSCRIPT = `Meeting: NovaWorks Client Delivery Planning
@@ -154,6 +155,17 @@ export default function TranscriptPage() {
             </button>
           </div>
         }
+      />
+
+      <GlassBanner
+        badge="GEMINI 2.5 AI ENGINE"
+        badgeColor="orange"
+        title="Zero-Loss Autonomous Meeting Parser"
+        description="Extracts multi-project scopes, manager assignments, estimated effort hours, and deadlines directly into execution tasks."
+        stats={[
+          { label: 'Pipeline', value: 'Atomic Batch', color: '#16a34a' },
+          { label: 'Fallback', value: 'Dynamic Pattern', color: '#ea580c' }
+        ]}
       />
 
       {error && (

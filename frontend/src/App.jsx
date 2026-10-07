@@ -31,6 +31,10 @@ function ProtectedLayout({ children, allowedRoles }) {
 
   return (
     <div className="app">
+      <div className="ambient-glow orb-1" />
+      <div className="ambient-glow orb-2" />
+      <div className="ambient-glow orb-3" />
+      <div className="ambient-glow orb-4" />
       <Sidebar />
       <main className="main">
         {children}

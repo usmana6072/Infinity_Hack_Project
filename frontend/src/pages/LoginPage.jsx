@@ -57,6 +57,10 @@ export default function LoginPage() {
 
   return (
     <section className="login-wrap">
+      <div className="ambient-glow orb-1" />
+      <div className="ambient-glow orb-2" />
+      <div className="ambient-glow orb-3" />
+      <div className="ambient-glow orb-4" />
       <div className="login-card">
         <div className="brand big">
           <span className="logo">N</span>

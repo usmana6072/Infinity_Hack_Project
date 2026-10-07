@@ -60,6 +60,10 @@ export const api = {
 
   // Users
   getTeam: () => request('/users/team'),
+  createUser: (userData) => request('/users', {
+    method: 'POST',
+    body: JSON.stringify(userData),
+  }),
 
   // Projects
   getProjects: () => request('/projects'),
@@ -68,6 +72,10 @@ export const api = {
   // Tasks
   getTasks: () => request('/tasks'),
   getMyTasks: () => request('/tasks/my'),
+  updateTask: (taskId, data) => request(`/tasks/${taskId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  }),
 
   // Transcript
   createFromTranscript: (transcript) => request('/transcript/create', {
