@@ -1,0 +1,22 @@
+# Environment variables
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.sqlite
+*.db
+.venv/
+venv/
+.pytest_cache/
+.coverage
+
+# Node
+node_modules/
+dist/
+build/
+.DS_Store
