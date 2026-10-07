@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NovaWorks CRM – Mock UI</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- LOGIN SCREEN -->
+<section id="login-view" class="login-wrap">
+  <div class="login-card">
+    <div class="brand big"><span class="logo">N</span> NovaWorks CRM</div>
+    <p class="muted">Meeting-to-execution project manager</p>
+    <form id="login-form" novalidate>
+      <label>Email
+        <input type="email" id="login-email" placeholder="admin@novaworks.example" autocomplete="username">
+      </label>
+      <label>Password
+        <input type="password" id="login-password" placeholder="Demo123!" autocomplete="current-password">
+      </label>
+      <div id="login-error" class="alert error hidden"></div>
+      <button class="btn primary block" type="submit">Log in</button>
+    </form>
+    <details class="demo-accounts">
+      <summary>Demo accounts (password: Demo123!)</summary>
+      <div id="demo-list"></div>
+    </details>
+  </div>
+</section>
+
+<!-- APP SHELL -->
+<div id="app-view" class="app hidden">
+  <aside class="sidebar">
+    <div class="brand"><span class="logo">N</span> NovaWorks</div>
+    <nav id="nav"></nav>
+    <div class="sidebar-foot">
+      <div class="user-chip">
+        <div class="avatar" id="user-avatar"></div>
+        <div><div id="user-name" class="strong"></div><div id="user-role" class="muted small"></div></div>
+      </div>
+      <button class="btn ghost block" id="logout-btn">Log out</button>
+    </div>
+  </aside>
+  <main class="main">
+    <header class="topbar"><h1 id="page-title"></h1><div id="page-actions"></div></header>
+    <div id="content"></div>
+  </main>
+</div>
+
+<div id="toast" class="toast hidden"></div>
+<script src="app.js"></script>
+</body>
+</html>
