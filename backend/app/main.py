@@ -22,20 +22,11 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# CORS configuration
-configured_origins = [o.strip() for o in settings.FRONTEND_ORIGIN.split(",") if o.strip()]
-origins = list(set([
-    *configured_origins,
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "http://localhost:3000",
-]))
-allow_all = "*" in origins
-
+# CORS configuration: Allow localhost, Vercel deployments, and all web origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"] if allow_all else origins,
-    allow_credentials=not allow_all,
+    allow_origin_regex=r"^https?://.*",
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
