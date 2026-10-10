@@ -1,4 +1,7 @@
-const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api';
+const RAW_API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://infinityhackproject-production.up.railway.app/api';
+const API_BASE = (RAW_API_BASE.startsWith('http') || RAW_API_BASE.startsWith('/'))
+  ? RAW_API_BASE.replace(/\/+$/, '')
+  : `https://${RAW_API_BASE.replace(/\/+$/, '')}/api`;
 
 export function getAuthToken() {
   return localStorage.getItem('novaworks_token');
